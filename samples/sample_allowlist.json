@@ -1,0 +1,13 @@
+{
+  "allow": [
+    "kubectl rollout restart staging-api",
+    "kubectl get pods",
+    "kubectl apply staging.yaml",
+    "kubectl logs staging-api",
+    "docker restart dev-cache",
+    "npm run build",
+    "psql select",
+    "aws s3 cp",
+    "git commit"
+  ]
+}

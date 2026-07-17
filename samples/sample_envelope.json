@@ -1,0 +1,28 @@
+{
+  "run_id": "run-1842",
+  "agent_id": "deploy-agent",
+  "environment": [
+    "staging",
+    "dev"
+  ],
+  "resources": [
+    "payments-api"
+  ],
+  "operations": [
+    "read",
+    "restart",
+    "get",
+    "apply",
+    "build",
+    "select",
+    "cp",
+    "commit",
+    "logs"
+  ],
+  "anchors": [
+    "no destructive operations"
+  ],
+  "issued_at": "2026-07-11T20:00:00Z",
+  "expires_at": "2999-01-01T00:00:00Z",
+  "signature": "cecf90e32c534d8c01ad8ff73ff5603d205da4407b3587a5cdc532d5a5e741d1"
+}

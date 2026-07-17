@@ -1,0 +1,6 @@
+{"tools":[
+ {"name":"kubectl_rollout_restart","parameters":{"target":"staging-api"}},
+ {"name":"kubectl_get_pods"},{"name":"kubectl_apply","parameters":{"file":"staging.yaml"}},
+ {"name":"kubectl_logs","parameters":{"target":"staging-api"}},
+ {"name":"docker_restart","parameters":{"target":"dev-cache"}},
+ {"name":"npm_run_build"},{"name":"psql_select"},{"name":"aws_s3_cp"},{"name":"git_commit"}]}

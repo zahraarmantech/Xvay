@@ -1,0 +1,15 @@
+{"ts":"2026-07-11T09:01:22Z","task_scope":"staging","action":"kubectl rollout restart staging-api"}
+{"ts":"2026-07-11T09:03:10Z","task_scope":"staging","action":"kubectl get pods -n staging"}
+{"ts":"2026-07-11T09:04:55Z","task_scope":"staging","action":"kubectl delete namespace production"}
+{"ts":"2026-07-11T09:07:31Z","task_scope":"dev","action":"docker restart dev-cache"}
+{"ts":"2026-07-11T09:09:02Z","task_scope":"clean environment","action":"docker volume prune"}
+{"ts":"2026-07-11T09:12:44Z","task_scope":"staging","action":"npm run build"}
+{"ts":"2026-07-11T09:15:19Z","task_scope":"code freeze","action":"kubectl delete deployment production-web","anchors":["no destructive"]}
+{"ts":"2026-07-11T09:18:03Z","task_scope":"staging","action":"psql -c select count(*) from users"}
+{"ts":"2026-07-11T09:20:47Z","task_scope":"reset the database","action":"psql -c drop database production"}
+{"ts":"2026-07-11T09:23:12Z","task_scope":"staging","action":"kubectl apply -f staging.yaml"}
+{"ts":"2026-07-11T09:25:58Z","task_scope":"staging","action":"aws s3 cp report.pdf s3://staging-bucket"}
+{"ts":"2026-07-11T09:28:33Z","task_scope":"free up space","action":"rm -rf /tmp/cache"}
+{"ts":"2026-07-11T09:31:09Z","task_scope":"staging","action":"kubectl logs staging-api --tail 100"}
+{"ts":"2026-07-11T09:34:41Z","task_scope":"cleanup","action":"aws rds delete-db-instance production-db"}
+{"ts":"2026-07-11T09:37:15Z","task_scope":"staging","action":"git commit -m hotfix"}

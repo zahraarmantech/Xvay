@@ -1,0 +1,13 @@
+{
+  "tools": [
+    {"name":"kubectl_rollout_restart","description":"restart a k8s deployment","parameters":{"target":"staging-api"}},
+    {"name":"kubectl_get_pods","description":"list pods"},
+    {"name":"kubectl_apply","description":"apply staging manifest","parameters":{"file":"staging.yaml"}},
+    {"name":"kubectl_logs","description":"read logs","parameters":{"target":"staging-api"}},
+    {"name":"docker_restart","description":"restart dev container","parameters":{"target":"dev-cache"}},
+    {"name":"npm_run_build","description":"build the project"},
+    {"name":"psql_select","description":"run a read query"},
+    {"name":"aws_s3_cp","description":"copy file to staging bucket"},
+    {"name":"git_commit","description":"commit changes"}
+  ]
+}

@@ -1,0 +1,1 @@
+{"agents":[{"tools":["kubectl_rollout_restart staging-api","kubectl_get_pods","kubectl_apply staging.yaml","kubectl_logs staging-api","docker_restart dev-cache","npm_run_build","psql_select","aws_s3_cp","git_commit"]}]}
