@@ -15,7 +15,7 @@ Report sections (exactly the five required):
   3. Irreversible actions lacking evidence (VERIFY/BLOCK on destructive)
   4. False-block candidates (BLOCK the reviewer may want to inspect)
   5. Exact evidence behind every decision
-Plus the without/with Xvay summary line.
+Plus the without/with XVay summary line.
 """
 import sys, json, csv, html, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -96,7 +96,7 @@ def render(res, src):
                 f"<td style='color:{C[r['decision']]};font-weight:700'>{r['decision']}</td>"
                 f"<td class='rsn'>{esc(r['reason'])}</td></tr>")
     return f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
-<title>Xvay Shadow Pilot Report</title><style>
+<title>XVay Shadow Pilot Report</title><style>
 body{{background:#0d1117;color:#e6edf3;font:14px/1.6 -apple-system,Segoe UI,Roboto,sans-serif;max-width:1040px;margin:0 auto;padding:36px 20px}}
 h1{{font-size:26px}} h2{{font-size:13px;color:#8b949e;text-transform:uppercase;letter-spacing:1px;margin:30px 0 10px}}
 .sub{{color:#8b949e}} .big{{font-size:40px;font-weight:700}}
@@ -111,10 +111,10 @@ code{{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#c9d1d9}}
 .summary{{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:18px;margin:22px 0}}
 .foot{{color:#8b949e;font-size:12px;margin-top:26px;border-top:1px solid #30363d;padding-top:14px}}
 </style></head><body>
-<h1>Xvay — Shadow Pilot Report</h1>
+<h1>XVay — Shadow Pilot Report</h1>
 <div class="summary" style="border-color:#f85149"><div class="lbl" style="color:#f85149">HEADLINE</div>
 <b style="font-size:22px">{len(irreversible)} irreversible action(s) stopped before execution.</b><br>
-<span class="sub">Without Xvay these would have run and could not be undone.</span></div>
+<span class="sub">Without XVay these would have run and could not be undone.</span></div>
 <p class="sub">Read-only analysis of <code>{esc(src)}</code>. No agent changes, no writes, no intervention. Every action was replayed through the frozen execution gate.</p>
 
 <h2>1 · Total actions reviewed</h2>
@@ -127,7 +127,7 @@ code{{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#c9d1d9}}
 <div class="card"><div class="big" style="color:{C['BLOCK']}">{counts['BLOCK']}</div>BLOCK<br><span class="sub">explicit contradiction</span></div>
 </div>
 
-<h2>3 · Irreversible actions lacking evidence <span class="sub">(would have executed without Xvay)</span></h2>
+<h2>3 · Irreversible actions lacking evidence <span class="sub">(would have executed without XVay)</span></h2>
 {"".join("<div class='flag'><code>"+esc(r['action'])+"</code><br><span class='rsn'>"+esc(r['reason'])+"</span></div>" for r in irreversible) or "<p class='sub'>None found in this log.</p>"}
 
 <h2>4 · False-block candidates <span class="sub">(review these — should any have been allowed?)</span></h2>
@@ -138,11 +138,11 @@ code{{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#c9d1d9}}
 {"".join(rowhtml(r) for r in res)}</table>
 
 <div class="summary">
-<b>Without Xvay:</b> all {n} actions execute as-is, including {len(irreversible)} irreversible action(s) with insufficient evidence.<br>
-<b>With Xvay:</b> {len(stopped)} action(s) held for verification / blocked before execution; {counts['COMMIT']} passed through with no friction.
+<b>Without XVay:</b> all {n} actions execute as-is, including {len(irreversible)} irreversible action(s) with insufficient evidence.<br>
+<b>With XVay:</b> {len(stopped)} action(s) held for verification / blocked before execution; {counts['COMMIT']} passed through with no friction.
 </div>
 
-<div class="foot">Xvay answers "enough evidence to execute?" — never "is this allowed?" (that is IAM/OPA's job).
+<div class="foot">XVay answers "enough evidence to execute?" — never "is this allowed?" (that is IAM/OPA's job).
 Designed for the failure class in 2025–26 agent incidents; no claim of preventing any specific named event.
 Reproducible: this report is a pure function of the input log and the frozen gate.</div>
 </body></html>"""

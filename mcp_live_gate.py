@@ -17,6 +17,12 @@ from normalizer import normalize
 import envelope as E
 import gate_with_envelope as gwe
 
+# Argument keys that carry human prose, not executable content. Their WORDS are
+# not commands; excluded from the canonical action. (Their raw text is still
+# scanned by arg_check for shell control characters.)
+FREE_TEXT_KEYS = {"message","m","msg","text","body","description","desc",
+                  "title","comment","summary","note","reason","content"}
+
 def call_to_action(params):
     """Flatten an MCP tools/call into one canonical action string.
     name 'kubectl_delete' + args {'resource':'namespace','target':'production'}
@@ -26,6 +32,8 @@ def call_to_action(params):
     parts = [name]
     # append argument VALUES in a stable order (values carry the resource/env)
     for k in sorted(args.keys()):
+        if k.lower() in FREE_TEXT_KEYS:      # prose, not executable content
+            continue
         v = args[k]
         if isinstance(v, (str,int,float)):
             parts.append(str(v))
@@ -39,8 +47,28 @@ def check(request, catalog, task_scope="", envelope=None):
     """Return (decision, reason, forward: bool)."""
     if request.get("method") != "tools/call":
         return "PASS", "not a tool call", True          # only gate tool calls
-    action = call_to_action(request.get("params", {}))
+    params = request.get("params", {})
+    action = call_to_action(params)
     decision, reason = gwe.decide(task_scope, catalog, action, envelope)
+    if decision == "COMMIT":
+        from arg_check import anomalies, default_sensitive_hits
+        args = params.get("arguments", {}) or {}
+        # built-in sensitive locations: WE suggest them, so VERIFY (not BLOCK).
+        # Disable with envelope["use_default_sensitive_paths"] = False
+        if (envelope or {}).get("use_default_sensitive_paths", True):
+            hits = default_sensitive_hits(args)
+            if hits:
+                return ("VERIFY",
+                        f"Argument names a well-known credential/secret location "
+                        f"{hits}. Built-in default (not customer-declared) -> approval "
+                        f"required. Disable with use_default_sensitive_paths=False.",
+                        False)
+        found = anomalies(args)
+        if found:
+            decision = "VERIFY"
+            reason = ("Argument structure is not a plain literal (" +
+                      "; ".join(found) + "); XVay cannot tell what will actually "
+                      "run. Approval required.")
     return decision, reason, decision == "COMMIT"
 
 def check_with_plan(request, catalog, task_scope="", envelope=None):

@@ -22,8 +22,6 @@ from normalizer import normalize
 
 # purely lexical, universal signals — kept deliberately tiny (anti-policy-engine)
 _BULK = {"all", "*", "everything", "recursive", "cascade", "-rf", "rf", "wildcard"}
-_REVERSIBLE_VERBS = {"restart", "read", "get", "list", "logs", "select", "build",
-                     "describe", "show", "create", "add", "scale", "start"}
 
 def plan(action: str) -> dict:
     na = normalize(action)["normalized_action"]

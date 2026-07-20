@@ -1,6 +1,6 @@
 """
 XVAY NORMALIZER — standardizes raw agent actions. DECIDES NOTHING.
-Rule (locked): no code before Xvay may make a decision; it may only
+Rule (locked): no code before XVay may make a decision; it may only
 standardize data. This module ONLY: splits glued tokens, unifies plurals,
 extracts the resource string for display. Output feeds the UNCHANGED gate.
 """

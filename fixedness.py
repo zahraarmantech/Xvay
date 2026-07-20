@@ -61,6 +61,6 @@ LITERAL_BRANCH = {"det-change", "det-insert", "insertion"}
 
 def predict(canonical: str, sentence: str):
     """returns ('l', cls) on the high-precision literal branch, else (None, cls)
-    = abstain (Xvay-style: speak only where the signal is strong)."""
+    = abstain (XVay-style: speak only where the signal is strong)."""
     cls = classify(canonical, sentence)
     return ("l" if cls in LITERAL_BRANCH else None), cls

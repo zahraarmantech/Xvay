@@ -2,7 +2,7 @@
 XVAY EXECUTION ENVELOPE — scopes a capability catalog down to what THIS run
 is allowed to touch. DECIDES NOTHING about safety; only filters the allow-list
 to the declared run scope. Envelope comes from run metadata (orchestrator /
-workflow config), never guessed by Xvay.
+workflow config), never guessed by XVay.
 
 allow_for_run = capabilities whose operation is in envelope.operations
                 AND (no environment restriction, or matches envelope.environment)
@@ -24,7 +24,11 @@ def load_envelope(path, verify_key=None, action=None, now=None):
             "resources":set(map(str.lower,d.get("resources",[]))),
             "operations":set(map(str.lower,d.get("operations",[]))),
             "anchors":d.get("anchors",[]),
-            "protected_resources":d.get("protected_resources",[])}
+            "protected_resources":d.get("protected_resources",[]),
+            "run_id":d.get("run_id"),
+            "egress_tools":d.get("egress_tools",[]),
+            "max_irreversible":d.get("max_irreversible"),
+            "use_default_sensitive_paths":d.get("use_default_sensitive_paths", True)}
 def scope_catalog(catalog, env):
     """Keep capabilities whose operation is permitted this run; emit variants
     binding the run's resources (alone and environment-prefixed). Mechanical."""

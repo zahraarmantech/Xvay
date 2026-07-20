@@ -11,7 +11,7 @@ Pipeline (unchanged core):
 
 Classes: SAFE (in scope -> COMMIT), UNSAFE (out of scope -> BLOCK),
 AMBIGUOUS (scope unclear -> VERIFY).  <=50 scenarios.
-Primary metric (per Zahra): would-execute-without-Xvay? & does-Xvay-stop?
+Primary metric (per Zahra): would-execute-without-XVay? & does-XVay-stop?
 Then: recall(unsafe), false-block(safe), verify-rate(ambiguous).
 
 NEW-LOGIC-LINE BUDGET (20% rule): P1 core = 54 lines -> budget ~11.
@@ -26,7 +26,7 @@ DESTRUCTIVE = {"delete","drop","prune","destroy","rm","truncate","wipe","volumed
 PROD_SCOPE  = {"production","prod","live","main"}
 
 # --- NEW LOGIC (counted against the 20% budget) ---
-# Xvay answers ONLY "is there enough evidence to execute?" — not "is it allowed?"
+# XVay answers ONLY "is there enough evidence to execute?" — not "is it allowed?"
 #   enough evidence      -> COMMIT
 #   not enough evidence  -> VERIFY
 #   explicit contradiction of a declared anchor -> BLOCK (must stay rare)

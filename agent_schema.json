@@ -1,0 +1,4 @@
+{"tools":[
+ {"name":"read_file"},{"name":"kubectl_logs"},{"name":"npm_run_build"},
+ {"name":"git_commit"},{"name":"kubectl_rollout_restart"},{"name":"kubectl_get_pods"}
+]}

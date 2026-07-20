@@ -1,6 +1,6 @@
 """
 XVAY ENVELOPE AUTH — asymmetric, replay-resistant, action-bound.
-Orchestrator holds the PRIVATE key and signs. Xvay holds ONLY the PUBLIC key
+Orchestrator holds the PRIVATE key and signs. XVay holds ONLY the PUBLIC key
 and can verify but NEVER forge. Envelope is bound to a specific action
 (action_hash) and single-use (nonce). Decides authenticity only.
 """
@@ -15,7 +15,7 @@ def action_hash(action: str) -> str:
 def _canon(env: dict) -> bytes:
     payload = {k: env.get(k) for k in
                ("run_id","agent_id","environment","resources","operations",
-                "anchors","protected_resources","action_hash","nonce","issued_at","expires_at")}
+                "anchors","protected_resources","egress_tools","max_irreversible","use_default_sensitive_paths","action_hash","nonce","issued_at","expires_at")}
     return json.dumps(payload, sort_keys=True, separators=(",",":")).encode()
 
 def keypair():
