@@ -1,6 +1,6 @@
-<p align="center"><b>XVay</b></p>
+<p align="center"><b>XVAY</b></p>
 <h3 align="center">Your AI agent is one mistake away from production disaster.</h3>
-<p align="center">Poker stops irreversible actions before they execute.</p>
+<p align="center">XVay stops irreversible actions before they execute.</p>
 
 ---
 
@@ -9,7 +9,7 @@
 ```text
 Agent:  Deleting production database...
 
-Poker:  ❌ BLOCKED
+XVay:  ❌ BLOCKED
         Production environment detected.
         Operation is irreversible.
         Human approval required.
@@ -17,13 +17,13 @@ Poker:  ❌ BLOCKED
 
 *(demo GIF goes here — record from DEMO.html)*
 
-## What problem does Poker solve?
+## What problem does XVay solve?
 
 AI agents now execute real actions. The failure mode every team eventually
 hits: an irreversible action that shouldn't have run — the wrong database
 deleted, a code freeze broken, production touched from a staging task. The
 agent's "safety layer" today is a system prompt: advisory, not enforceable.
-Poker is the enforceable version — an approval layer outside the model.
+XVay is the enforceable version — an approval layer outside the model.
 Three outcomes only: **COMMIT** (evidence sufficient) · **VERIFY** (evidence
 missing) · **BLOCK** (explicit contradiction, kept rare).
 
@@ -32,7 +32,7 @@ missing) · **BLOCK** (explicit contradiction, kept rare).
 ```text
 tool schema ──► connector (8 frameworks) ──► capability catalog
 run metadata ─► signed execution envelope ─► scope for THIS run
-                (Ed25519 — Poker holds only the PUBLIC key:
+                (Ed25519 — XVay holds only the PUBLIC key:
                  it verifies permissions, it cannot forge them)
 catalog ∩ scope ──► normalizer (standardizes, never decides)
                 ──► gate ──► COMMIT / VERIFY / BLOCK + human-readable reason
@@ -45,7 +45,7 @@ allowed in a "read staging logs" run.
 
 ```bash
 pip install -r requirements.txt   # pynacl only
-python3 poker_shadow.py --framework mcp --schema tools.json \
+python3 xvay_shadow.py --framework mcp --schema tools.json \
         --actions actions.jsonl --output report.html
 ```
 
@@ -66,7 +66,7 @@ out-of-scope actions stopped · 0% false-block on safe actions · BLOCK rate 11%
 
 ## Real-time enforcement (not just shadow)
 
-Beyond the read-only shadow pilot, Poker can enforce live. `mcp_live_gate.py`
+Beyond the read-only shadow pilot, XVay can enforce live. `mcp_live_gate.py`
 intercepts an MCP `tools/call` BEFORE it reaches the tool and returns
 COMMIT / VERIFY / BLOCK in real time — COMMIT forwards, VERIFY/BLOCK stop the
 action and hand the reason back to the agent (so the agent itself can react).
@@ -78,11 +78,11 @@ systems): reversibility, scope, and environment — the way `terraform plan`
 shows what will change before `apply`. Every decision is self-explaining, so
 audit is automatic rather than manual, and the loop stays agentic.
 
-## Protected resources (you declare, Poker enforces)
+## Protected resources (you declare, XVay enforces)
 
 Declare sensitive resources in the signed envelope (e.g. `orders-primary`,
 `stripe-live`). Any NON-read action naming one is BLOCKed — even if the verb
-isn't an obvious destructive word. Reads pass. Poker never guesses what's
+isn't an obvious destructive word. Reads pass. XVay never guesses what's
 sensitive; you declare it, so every block is auditable.
 
 
@@ -91,7 +91,7 @@ sensitive; you declare it, so every block is auditable.
 A chain can be dangerous even when every step looks fine:
 `read customer-records` (safe) then `slack_post_message` (safe) = exfiltration.
 
-Poker keeps a lightweight per-run trace — a taint flag and an irreversible-action
+XVay keeps a lightweight per-run trace — a taint flag and an irreversible-action
 counter. It is **not** a transaction manager: no shadow execution, no effect
 outbox, no rollback. You declare the boundaries in the signed envelope:
 
@@ -108,7 +108,7 @@ env_doc["max_irreversible"] = 3
 ## Argument-level protection (on by default)
 
 Gating on tool names alone is not enough: `kubectl_logs` with the argument
-`; rm -rf /` is an allowed tool doing something else entirely. Poker inspects
+`; rm -rf /` is an allowed tool doing something else entirely. XVay inspects
 argument **structure** (never semantics) and downgrades COMMIT -> VERIFY on:
 shell control characters, `../` traversal, `$VAR` indirection, base64 that
 decodes to readable text, write/exfil clauses in a read-only tool's argument,
@@ -134,11 +134,11 @@ leak (so the test is real), and 20 concurrent writers lose zero writes.
 
 ## When a run is stopped midway
 
-Poker prevents; it does not roll back. If step 4 is blocked, the orchestrator
+XVay prevents; it does not roll back. If step 4 is blocked, the orchestrator
 needs to know what steps 1-3 did:
 
 ```python
-run_trace.manifest(run_id)   # exactly what Poker COMMITted -> you compensate
+run_trace.manifest(run_id)   # exactly what XVay COMMITted -> you compensate
 run_trace.receipt(run_id)    # audit: steps seen, committed, stopped WITH reasons
 ```
 Stopped attempts are recorded, not silently dropped — a blocked exfiltration
@@ -146,7 +146,7 @@ attempt is the most audit-relevant event in the run.
 
 ## Adversarial evidence (including what failed)
 
-`python adversarial_benchmark.py` — 38 cases written to break Poker:
+`python adversarial_benchmark.py` — 38 cases written to break XVay:
 **38/38, safety leaks 0/14, friction 0/24**, including 10 "hard benign" cases
 designed to trip our own rules.
 
@@ -162,7 +162,7 @@ should convince you is a shadow report on *your* logs.
 ## Honest limitations
 
 - **No rollback.** If automatic undo of partially-completed workflows is a hard
-  requirement, a transactional runtime is the right tool and Poker is not.
+  requirement, a transactional runtime is the right tool and XVay is not.
 - **Coarse cross-step signal.** A boolean taint, not a lineage graph — it is
   conservative and can over-block on long runs.
 - **Pre-execution blindness.** Danger that only appears when a payload executes
@@ -182,9 +182,9 @@ report shows the delta on your own data in 30 minutes.
 **What does a pilot cost me?** One command, zero system changes, zero write
 access. Worst case you lose half an hour.
 
-**Does Poker decide what's allowed?** No — that's IAM/OPA's job. Poker answers
+**Does XVay decide what's allowed?** No — that's IAM/OPA's job. XVay answers
 one question: "is there enough evidence to execute this action, now?"
 
-**Has Poker prevented real incidents?** We don't claim past events. It is
+**Has XVay prevented real incidents?** We don't claim past events. It is
 designed for the failure class seen in 2025–26 agent incidents; your shadow
 report is the evidence that matters.
