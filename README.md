@@ -1,4 +1,4 @@
-<p align="center"><b>POKER</b></p>
+<p align="center"><b>XVay</b></p>
 <h3 align="center">Your AI agent is one mistake away from production disaster.</h3>
 <p align="center">Poker stops irreversible actions before they execute.</p>
 
