@@ -4,6 +4,8 @@ XVay decides whether an agent's tool call has **enough evidence to run, right
 now** — *before* it executes, from the request text alone, outside the model.
 It returns one of three verdicts:
 
+![xvay demo](demo.gif)
+
 - **COMMIT** — enough evidence; let it run.
 - **VERIFY** — not enough evidence; a human should approve first.
 - **BLOCK** — the request contradicts something the operator explicitly declared.
@@ -97,7 +99,7 @@ no — is the product being honest about what it is.
 ## Install
 
 ```bash
-git clone https://github.com/<your-account>/xvay
+git clone https://github.com/zahraarmantech/xvay
 cd xvay
 pip install -r requirements.txt   # just pynacl, for envelope signing
 ```
