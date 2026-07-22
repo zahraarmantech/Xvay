@@ -91,6 +91,10 @@ for t in execution_gate integration_benchmark protected_resource_benchmark \
 done
 ```
 
+> **Windows:** use `python` instead of `python3` (the `python3` alias usually
+> isn't defined). In Git Bash the loop above works as-is once you swap the
+> command; in PowerShell, run each test with `python <name>.py`.
+
 Notable ones:
 
 | test | what it proves |
