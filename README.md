@@ -4,11 +4,11 @@ XVay decides whether an agent's tool call has **enough evidence to run, right
 now** — *before* it executes, from the request text alone, outside the model.
 It returns one of three verdicts:
 
-![xvay demo](demo.gif)
-
 - **COMMIT** — enough evidence; let it run.
 - **VERIFY** — not enough evidence; a human should approve first.
 - **BLOCK** — the request contradicts something the operator explicitly declared.
+
+![xvay demo](demo.gif)
 
 It is **not** a policy engine and does not decide what is "dangerous." The
 operator declares what matters (protected resources, egress tools, limits) in a
