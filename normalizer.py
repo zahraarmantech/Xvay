@@ -5,6 +5,8 @@ standardize data. This module ONLY: splits glued tokens, unifies plurals,
 extracts the resource string for display. Output feeds the UNCHANGED gate.
 """
 import re
+from canon import tokens as _canon_tokens
+
 def normalize(action: str):
     a = action.strip()
     # 1) remove CLI flags first (tokens starting with '-'), preserving real verbs like 'rm'
@@ -12,8 +14,9 @@ def normalize(action: str):
     flags = [t for t in raw if t.startswith("-")]           # e.g. -rf, -f, -n, --tail
     kept  = [t for t in raw if not t.startswith("-")]
     a = " ".join(kept)
-    a = a.replace("-", " ").replace("/", " ")               # split any remaining glued tokens
-    toks = a.split()
+    # SINGLE tokenizer (canon.py): every non-alphanumeric character is a
+    # separator, so no punctuation/quoting/separator style can hide a verb.
+    toks = _canon_tokens(a)
     toks = [t for t in toks if not t.startswith("tail")]    # drop --tail style modifiers
     # 2) preserve a bulk signal if a recursive/force flag was present (-rf, -r, --recursive)
     if any(("r" in f) for f in flags):

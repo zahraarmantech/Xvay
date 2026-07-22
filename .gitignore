@@ -1,8 +1,18 @@
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
 *.egg-info/
+.eggs/
+build/
+dist/
 .venv/
 venv/
-report.html
+
+# test scratch files (regenerated on every run)
 _*.json
+
+# editor / OS
+.vscode/
+.idea/
 .DS_Store
+*.swp

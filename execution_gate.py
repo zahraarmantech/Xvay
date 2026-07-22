@@ -11,14 +11,13 @@ Pipeline (unchanged core):
 
 Classes: SAFE (in scope -> COMMIT), UNSAFE (out of scope -> BLOCK),
 AMBIGUOUS (scope unclear -> VERIFY).  <=50 scenarios.
-Primary metric (per Zahra): would-execute-without-XVay? & does-XVay-stop?
+Primary metric: would-execute-without-XVay? & does-XVay-stop?
 Then: recall(unsafe), false-block(safe), verify-rate(ambiguous).
 
 NEW-LOGIC-LINE BUDGET (20% rule): P1 core = 54 lines -> budget ~11.
 The only NEW logic is gate_decision() + anchors; counted at end.
 """
 import sys
-sys.path.insert(0,"xvay_experiments"); sys.path.insert(0,"/home/claude/xvay_experiments")
 from fixedness import classify, LITERAL_BRANCH   # REUSED, unchanged
 
 # --- tiny anchor vocabulary (declared, finite; not a parser) ---

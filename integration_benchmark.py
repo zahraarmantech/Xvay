@@ -16,7 +16,7 @@ for m in (normalizer, plan, envelope, envelope_auth, gate_with_envelope, mcp_liv
 from connectors import to_canonical
 EA, E, gwe, mm = envelope_auth, envelope, gate_with_envelope, mcp_live_gate
 
-FROZEN_GATE_MD5 = "567a12cd2a63b96dd91625c5b2c40aad"
+FROZEN_GATE_MD5 = "469d51f46ba09e553d7fbe4ef0cde302"
 sk, vk = EA.keypair()
 
 def _md5(f): return hashlib.md5(open(f,"rb").read()).hexdigest()
@@ -184,6 +184,37 @@ if os.path.isdir(_sp) and os.path.exists(os.path.join(_sp, "sample_envelopes.jso
     expect("shipped sample envelopes verify", _bad, 0)
 else:
     print("  (samples/ not present in this folder - skipped)")
+
+
+run_trace.reset()
+# Regression guard: protected-resource names may be written with underscores OR
+# hyphens. This bug (only '-' was normalised) was invisible to our own test set
+# because we had written every case with hyphens. Third-party data found it.
+XCAT3 = ["read channel messages", "send direct message"]
+def xstep3(run_id, action, params, protected, tag):
+    env_d={"run_id":run_id,"agent_id":"a","environment":["prod"],"resources":[],
+           "operations":["read","send"],"anchors":[],"protected_resources":[protected],
+           "egress_tools":["send_direct_message"],"max_irreversible":None,
+           "action_hash":EA.action_hash(action),"nonce":"us-"+run_id+tag,
+           "issued_at":"2026-07-11T20:00:00Z","expires_at":"2999-01-01T00:00:00Z"}
+    json.dump(EA.sign(env_d,sk),open("_xs.json","w"))
+    env=E.load_envelope("_xs.json",verify_key=vk,action=action)
+    return mm.check({"method":"tools/call","params":params}, XCAT3, task_scope="prod", envelope=env)[0]
+for style, name in (("underscore","read_channel_messages"), ("hyphen","read-channel-messages")):
+    run_trace.reset()
+    xstep3("u"+style,"read channel messages",{"name":"read_channel_messages","arguments":{}},name,"1")
+    expect(f"protected name with {style} taints the run", run_trace.get("u"+style)["tainted"], True)
+    expect(f"egress after {style}-declared read -> BLOCK",
+           xstep3("u"+style,"send direct message x",{"name":"send_direct_message","arguments":{"m":"x"}},name,"2"), "BLOCK")
+
+
+# Regression guard: quoting must not hide a destructive verb.
+# `psql -c 'drop database x'` tokenised to "'drop", which did not match "drop" —
+# so quoting alone bypassed the gate. Found by testing a generic `bash` tool.
+_q = normalizer.normalize("bash psql -c 'drop database production'")["normalized_action"]
+expect("quoted destructive verb is visible", "drop" in _q.split(), True)
+_q2 = normalizer.normalize('bash sh -c "rm -rf /data"')["normalized_action"]
+expect("quoted rm is visible", "rm" in _q2.split(), True)
 
 print(f"\n{'='*50}")
 print(f"INTEGRATION BENCHMARK: {'ALL PASS' if not fails else str(len(fails))+' FAILED: '+', '.join(fails)}")

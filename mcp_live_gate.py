@@ -27,7 +27,8 @@ def call_to_action(params):
     """Flatten an MCP tools/call into one canonical action string.
     name 'kubectl_delete' + args {'resource':'namespace','target':'production'}
     -> 'kubectl delete namespace production'. Mechanical; no decision."""
-    name = (params.get("name") or "").replace("_"," ").replace("-"," ").strip()
+    from canon import canon as _c
+    name = _c(params.get("name") or "")
     args = params.get("arguments", {}) or {}
     parts = [name]
     # append argument VALUES in a stable order (values carry the resource/env)
@@ -49,26 +50,9 @@ def check(request, catalog, task_scope="", envelope=None):
         return "PASS", "not a tool call", True          # only gate tool calls
     params = request.get("params", {})
     action = call_to_action(params)
-    decision, reason = gwe.decide(task_scope, catalog, action, envelope)
-    if decision == "COMMIT":
-        from arg_check import anomalies, default_sensitive_hits
-        args = params.get("arguments", {}) or {}
-        # built-in sensitive locations: WE suggest them, so VERIFY (not BLOCK).
-        # Disable with envelope["use_default_sensitive_paths"] = False
-        if (envelope or {}).get("use_default_sensitive_paths", True):
-            hits = default_sensitive_hits(args)
-            if hits:
-                return ("VERIFY",
-                        f"Argument names a well-known credential/secret location "
-                        f"{hits}. Built-in default (not customer-declared) -> approval "
-                        f"required. Disable with use_default_sensitive_paths=False.",
-                        False)
-        found = anomalies(args)
-        if found:
-            decision = "VERIFY"
-            reason = ("Argument structure is not a plain literal (" +
-                      "; ".join(found) + "); XVay cannot tell what will actually "
-                      "run. Approval required.")
+    decision, reason = gwe.decide(task_scope, catalog, action, envelope,
+                                  tool_name=params.get("name"),
+                                  arguments=params.get("arguments"))
     return decision, reason, decision == "COMMIT"
 
 def check_with_plan(request, catalog, task_scope="", envelope=None):

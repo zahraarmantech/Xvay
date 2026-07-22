@@ -9,7 +9,12 @@ principle applied to arguments, not a policy engine.
 """
 import re
 
-_SHELL_CTRL = re.compile(r"(;|&&|\|\||\||`|\$\(|>>|>\s*/)")     # command chaining/redirection
+# Chaining operators (; && || |) are NOT listed here: composing readable
+# commands is ordinary engineering. What hides execution is command
+# SUBSTITUTION and piping into an interpreter (handled as a chain check in
+# gate_with_envelope), plus redirection into an absolute path.
+_SHELL_CTRL = re.compile(r"(`|\$\(|>>\s*/|>\s*/)")   # hidden execution / absolute redirect
+_CHAINING   = re.compile(r";|&&|\|\||\|")             # a second command inside an argument
 _INDIRECT   = re.compile(r"\$\{?[A-Za-z_][A-Za-z0-9_]*\}?")      # $VAR indirection
 _TRAVERSAL  = re.compile(r"\.\./")                               # path traversal
 _B64BLOB    = re.compile(r"[A-Za-z0-9+/]{16,}={0,2}")            # candidate base64 token
@@ -56,7 +61,7 @@ def default_sensitive_hits(arguments):
     scan(arguments)
     return hits
 
-def anomalies(arguments):
+def anomalies(arguments, shell_context=False):
     """arguments: the raw dict from an MCP tools/call. Returns list of findings."""
     found = []
     def scan(val, path="arg"):
@@ -66,7 +71,12 @@ def anomalies(arguments):
             for v in val: scan(v, path)
         elif isinstance(val, str):
             s = val
-            if _SHELL_CTRL.search(s):  found.append(f"shell control characters in '{path}'")
+            if _SHELL_CTRL.search(s):  found.append(f"hidden execution (substitution/redirect) in '{path}'")
+            # An argument is supposed to be a literal value. A chaining operator
+            # inside one means a second command was smuggled in. Exempt only when
+            # the invoked tool IS a shell, where composing commands is its job.
+            if not shell_context and _CHAINING.search(s):
+                found.append(f"command chaining inside argument '{path}'")
             if _TRAVERSAL.search(s):   found.append(f"path traversal in '{path}'")
             if _INDIRECT.search(s):    found.append(f"variable indirection in '{path}'")
             m = _B64BLOB.search(s)
