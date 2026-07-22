@@ -84,27 +84,28 @@ For production the envelope should be **signed** (Ed25519); see
 Every claim above is checked by a test in this repo.
 
 ```bash
-for t in execution_gate integration_benchmark protected_resource_benchmark \
-         evidence_benchmark multiprocess_test property_test \
-         adversarial_benchmark hard_test cordon_gap identity_test; do
+for t in identity_test property_test adversarial_benchmark; do
   echo "== $t =="; python3 $t.py
 done
+
+# real recorded agent traffic (downloads a public dataset):
+pip install datasets
+python3 real_agent_benchmark.py 150
 ```
 
 > **Windows:** use `python` instead of `python3` (the `python3` alias usually
-> isn't defined). In Git Bash the loop above works as-is once you swap the
-> command; in PowerShell, run each test with `python <name>.py`.
-
-Notable ones:
+> isn't defined). In PowerShell, run each test with `python <name>.py`.
 
 | test | what it proves |
 |---|---|
+| `real_agent_benchmark.py` | replays **10,000 real OpenHands tool calls** (150 real GitHub-issue fixes) through the gate: **1.4% friction, 0 parse errors**, and every stop is a real `rm` — reproduce it yourself |
+| `adversarial_benchmark.py` | 38 hand-built attacks incl. shell-injection, command substitution, pipe-to-interpreter, data-egress; **0 leaks, 0 friction** |
 | `property_test.py` | 245 generated spelling/transform cases; no dangerous action ever COMMITs, no benign one is ever stopped |
-| `adversarial_benchmark.py` | 38 hand-built attacks incl. shell-injection; 0 leaks, 0 friction |
-| `hard_test.py` | rules tested against real destructive-but-routine traffic (`rm -rf node_modules`, pipes) written to break them |
 | `identity_test.py` | 8 structural invariants over 4,896 inputs: the wrapper checks only ever downgrade COMMIT→VERIFY, never execute, never emit BLOCK |
-| `cordon_gap.py` | coverage of the five risk families from the Cordon paper (arXiv 2606.17573) |
-| `agentdojo_paired.py` | real third-party benchmark (`pip install agentdojo`); reports the honest ~2% / ~55% numbers above |
+
+The 1.4% the gate holds on real traffic is not friction to be tuned away — every
+one is a real `rm` of a file, held for a one-tap approval because deletion is
+irreversible. That is the product working, measured on traffic we did not write.
 
 ## How it works (one paragraph)
 

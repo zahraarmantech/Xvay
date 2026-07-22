@@ -27,6 +27,16 @@ _DESTRUCTIVE = _ns["DESTRUCTIVE"]
 # ---------------------------------------------------------------------------
 import re as _re
 
+_INLINE_CODE_BODY = _re.compile(
+    r"""(?:python3?|node|ruby|perl)\s+(?:-\S+\s+)*?(?:-c|-e)\s+(?P<q>['"]).*?(?P=q)""", _re.S)
+def _strip_inline_code(text):
+    """Remove a PROGRAMMING interpreter's `-c "<code>"` body so its language
+    tokens (truncate, drop, >, $) are not mis-read as shell operations. Only
+    python/node/ruby/perl bodies are stripped — a `sh -c`/`bash -c` body IS
+    shell, so its verbs are real and must still be scanned."""
+    return _INLINE_CODE_BODY.sub(" -c <code> ", str(text))
+
+
 # Environment names split by ambiguity in ordinary engineering English.
 # UNAMBIGUOUS names practically never appear as build targets, so naming one
 # is itself evidence the action left its authorised environment.
@@ -42,26 +52,41 @@ _ENV_FLAG = _re.compile(
 def _env_names_referenced(raw_action, known_extra=()):
     """Environment names the action actually REFERS TO (mechanical).
 
-    Unambiguous names count on sight. Ambiguous names count only with
-    corroboration: an explicit env flag, or the name joined to another token by
-    a separator (`prod-db`, `test_cluster`) which marks it as a qualifier
-    rather than a standalone build target.
+    An environment name counts only when it appears as a STANDALONE token
+    (surrounded by whitespace or string boundaries) or via an explicit env flag
+    (`--env prod`). A name embedded in a larger identifier or path
+    (`live_russia_tv.py`, `production_config.py`, `test_basic.py`) is an ordinary
+    symbol, not an environment reference — treating `_`, `-`, `.`, `/` as part of
+    the token is what keeps XVay off normal source-editing traffic.
+
+    Unambiguous names (prod, production, live, staging, preprod) count as soon as
+    they appear standalone. Ambiguous names (test, dev, qa, ...) double as build
+    targets even when standalone (`npm run dev`), so they need an explicit flag.
     """
     low = str(raw_action).lower()
     found = set()
     flagged = {m.group(1).strip().lower() for m in _ENV_FLAG.finditer(low)}
     known_extra = {str(k).lower() for k in (known_extra or ())}
     universe = _ENV_UNAMBIGUOUS | _ENV_AMBIGUOUS | known_extra
+
+    # Tokens that are file paths or filenames: an env name inside one is a symbol,
+    # not an environment (`src/plugins/live_russia_tv.py`, `staging_defaults.py`).
+    path_tokens = [t for t in _re.split(r"\s+", low)
+                   if ("/" in t) or _re.search(r"\.[a-z0-9]{1,6}$", t)]
+    def _inside_a_path(name):
+        return any(_re.search(r"(?<![a-z0-9])" + _re.escape(name), t) for t in path_tokens)
+
     for name in universe:
-        if not _re.search(r"(?<![a-z0-9])" + _re.escape(name) + r"(?![a-z0-9])", low):
-            continue
-        if name in _ENV_UNAMBIGUOUS or name in known_extra:
-            found.add(name); continue
-        # ambiguous: needs corroboration
         if name in flagged:
             found.add(name); continue
-        if _re.search(r"(?<![a-z0-9])" + _re.escape(name) + r"[-_.][a-z0-9]"
-                      r"|[a-z0-9][-_.]" + _re.escape(name) + r"(?![a-z0-9])", low):
+        # word-boundary occurrence, allowing - and . as qualifier joiners
+        # (`prod-db`, `prod.cluster`) but NOT when the whole token is a path/file.
+        occ = _re.search(r"(?<![a-z0-9_])" + _re.escape(name) + r"(?![a-z0-9_])", low)
+        if not occ:
+            continue
+        if _inside_a_path(name):
+            continue
+        if name in _ENV_UNAMBIGUOUS or name in known_extra:
             found.add(name)
     return found
 
@@ -119,15 +144,36 @@ _OPAQUE_LAUNCHER = {
     "npm", "npx", "yarn", "pnpm", "pipenv", "poetry", "gradle", "mvn", "ant",
 }
 
-_INTERPRETERS = {"sh","bash","zsh","ksh","dash","python","python3","node",
-                 "ruby","perl","eval","source","xargs"}
+_INTERPRETERS = {"sh","bash","zsh","ksh","dash","eval","source",
+                 "python","python3","node","ruby","perl"}
+# xargs is intentionally NOT here: `xargs grep`/`xargs cat` run a visible
+# named command. `_chain_into_interpreter` already exempts a piped
+# interpreter that is given an explicit script, so `x | python foo.py`
+# passes while `curl x | python` (reading code from stdin) is flagged.
+# python/node/ruby/perl execute a NAMED script or inline -c, which is visible;
+# xargs runs a NAMED command. These are only hidden execution when reading
+# stdin as CODE, handled by the stdin/-c check below, not by mere presence.
 _CHAIN_SPLIT = _re.compile(r"\|\||&&|[;|\n]")
 _CHAINING = _re.compile(r";|&&|\|\||\|")
+_PIPE_EXFIL = _re.compile(r"\|\s*(curl|wget|nc|ncat|socat)\b[^|]*"
+                          r"(-d\s*@?-|--data(-binary)?\s*@?-|-T\s*-|--upload-file\s*-|@-)")
 # Tools whose whole purpose is to run a shell command line. For these, chaining
 # readable commands is ordinary. For every OTHER tool, an argument is supposed
 # to be a literal, so a chaining operator inside it is command injection.
 _SHELL_TOOLS = {"bash","sh","zsh","ksh","shell","exec","execute","run","command",
                 "runcommand","run_command","terminal","cli","system"}
+
+# Tools that produce NO external effect: they only record a thought, a plan, or
+# a completion signal. Their arguments are free-form prose, never executed, so
+# scanning them for shell syntax is a pure false-positive source.
+_NO_EFFECT_TOOLS = {"think","thought","reason","reasoning","plan","finish",
+                    "complete","done","respond","message","note","summarize"}
+
+def _is_no_effect_tool(tool_name, raw_action):
+    if tool_name and (set(_words(tool_name)) & _NO_EFFECT_TOOLS):
+        return True
+    parts = [p for p in str(raw_action).split() if not p.startswith("-")]
+    return bool(parts and set(_words(parts[0])) & _NO_EFFECT_TOOLS)
 
 def _is_shell_tool(tool_name, raw_action):
     if tool_name:
@@ -136,13 +182,36 @@ def _is_shell_tool(tool_name, raw_action):
     return bool(parts and set(_words(parts[0])) & _SHELL_TOOLS)
 
 def _chain_into_interpreter(raw_action):
-    """A chained command whose downstream segment is an interpreter executes
-    text that is NOT visible in the request (`curl x | sh`). Composing readable
-    commands (`cat f | grep x`) is ordinary and is not flagged."""
-    parts = [p.strip() for p in _CHAIN_SPLIT.split(str(raw_action)) if p.strip()]
-    for seg in parts[1:]:
+    """A command that PIPES into a bare interpreter runs text that is not visible
+    in the request (`curl x | sh`, `cat y | python`). That is the hidden-execution
+    case. It is NOT the same as sequencing an explicit script (`cd d && python
+    test.py` or `x && bash deploy.sh`), where what runs is named right there and
+    is ordinary engineering. So we flag only a real pipe ('|', not '&&'/';')
+    whose downstream head is an interpreter AND which is reading stdin (no script
+    argument of its own)."""
+    s = str(raw_action)
+    # split on PIPES only; sequencing operators are not hidden execution
+    segs = [p.strip() for p in _re.split(r"\|(?!\|)", s) if p.strip()]
+    for seg in segs[1:]:
         w = _words(seg)
-        if w and w[0] in _INTERPRETERS:
+        if not w or w[0] not in _INTERPRETERS:
+            continue
+        # `... | python script.py` names its script -> visible, not hidden.
+        # `... | sh` / `... | python -` / `... | python` reads stdin -> hidden.
+        rest = seg.split()
+        toks = rest[1:]
+        has_explicit_script = any(
+            (not tok.startswith("-")) and tok.lower() not in _INTERPRETERS
+            and tok != "-" and (tok.endswith((".py",".sh",".rb",".js",".pl"))
+                                or "/" in tok or tok.startswith("script"))
+            for tok in toks
+        )
+        # `python -m module` / `-mmodule` is an explicit named invocation.
+        if any(t=="-m" or t.startswith("-m") for t in toks):
+            has_explicit_script = True
+        # `-c "..."` inline code is still hidden execution of literal code
+        inline_c = any(tok in ("-c","-e","--command","--eval") for tok in rest[1:])
+        if not has_explicit_script or inline_c:
             return w[0]
     return None
 
@@ -212,8 +281,20 @@ def decide(task_scope, catalog, action, env, tool_name=None, arguments=None):
         # the declared capability did not contain a destructive verb, but the
         # actual action does -> the arguments brought danger the schema never
         # declared. Evidence mismatch => VERIFY (never silently COMMIT).
+        # Inline interpreter code that RE-ENTERS the shell is hidden execution,
+        # regardless of the benign-looking wrapper.
+        if decision == "COMMIT" and _re.search(
+                r"(os\.system|subprocess|\bpopen\b|\beval\b|\bexec\b|check_output|check_call|Popen)",
+                str(action)) and _re.search(r"(?:-c|-e|--command|--eval)\b", str(action)):
+            decision, reason = "VERIFY", (
+                "Inline code re-enters the shell (os.system/subprocess/eval), so the real "
+                f"operation is not visible in the request ({na}). Approval required.")
         if decision == "COMMIT":
-            act_destructive = toks & _DESTRUCTIVE
+            # Destructive verbs inside inline interpreter code (`python -c
+            # "...truncate()..."`) are language, not shell operations. Scan a
+            # code-stripped view so only real shell verbs count.
+            _dest_toks = token_set(normalize(_strip_inline_code(action))["normalized_action"])
+            act_destructive = _dest_toks & _DESTRUCTIVE
             if act_destructive:
                 # Only the INVOKED tool's own name may declare a destructive
                 # verb. Previously any allow-list entry whose tokens appeared in
@@ -268,18 +349,25 @@ def decide(task_scope, catalog, action, env, tool_name=None, arguments=None):
     # A chaining operator inside a NON-shell tool's request means a second,
     # unrelated command was smuggled into an argument -> injection, not
     # composition. Shell tools are exempt: composing commands is their job.
-    if decision == "COMMIT" and not _is_shell_tool(tool_name, action):
+    _no_effect = _is_no_effect_tool(tool_name, action)
+    if decision == "COMMIT" and not _is_shell_tool(tool_name, action) and not _no_effect:
         if _CHAINING.search(str(action)):
             decision, reason = "VERIFY", (
                 f"Command chaining inside a non-shell tool request: the argument carries a "
                 f"second command rather than a literal value ({na}). Approval required.")
-    if decision == "COMMIT":
+    if decision == "COMMIT" and not _no_effect:
         _sink = _chain_into_interpreter(action)
         if _sink:
             decision, reason = "VERIFY", (
                 f"Hidden execution: the command chain pipes into '{_sink}', so what actually "
                 f"runs is not visible in the request. Approval required.")
-    if decision == "COMMIT":
+    # Data-out: local content piped into curl/wget/nc AS a request body is
+    # exfiltration (`... | curl -d @- url`). Distinct from `url | sh` (code in).
+    if decision == "COMMIT" and not _no_effect and _PIPE_EXFIL.search(str(action)):
+        decision, reason = "VERIFY", (
+            "Data egress: a command pipes local output into an outbound request body "
+            f"({na}). Approval required.")
+    if decision == "COMMIT" and not _no_effect:
         _args = arguments if arguments is not None else {"action": action}
         _found = arg_check.anomalies(_args, shell_context=_is_shell_tool(tool_name, action))
         if _found:

@@ -1,5 +1,6 @@
 # Core dependency: Ed25519 envelope signing.
 pynacl>=1.5.0
 
-# Optional, only for tests/agentdojo_paired.py (real third-party benchmark):
-#   pip install agentdojo
+# Optional, only for real_agent_benchmark.py (replays real recorded agent
+# traffic from a public dataset):
+#   pip install datasets
