@@ -99,7 +99,7 @@ no — is the product being honest about what it is.
 ## Install
 
 ```bash
-git clone https://github.com/zahraarmantech/xvay
+git clone https://github.com/zahraarmantech/Xvay
 cd xvay
 pip install -r requirements.txt   # just pynacl, for envelope signing
 ```
