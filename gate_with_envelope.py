@@ -28,13 +28,25 @@ _DESTRUCTIVE = _ns["DESTRUCTIVE"]
 import re as _re
 
 _INLINE_CODE_BODY = _re.compile(
-    r"""(?:python3?|node|ruby|perl)\s+(?:-\S+\s+)*?(?:-c|-e)\s+(?P<q>['"]).*?(?P=q)""", _re.S)
+    r"""(?:python3?|node|ruby|perl)\s+(?:-\S+\s+)*?(?:-c|-e)\s+(?P<q>['"]).*(?P=q)""", _re.S)
+_HEREDOC_BODY = _re.compile(r"<<-?\s*(['\"]?)(\w+)\1\r?\n.*?\r?\n\2\b", _re.S)
+# ONLY the quoted search pattern of a search command (grep/egrep/rg/ag/find
+# -name) is a string literal, not an operation. We deliberately do NOT strip
+# arbitrary quoted strings, because `sh -c "rm -rf /"` is a real shell body.
+_SEARCH_PATTERN = _re.compile(
+    r"\b(?:e?grep|rg|ag|ack|fgrep)\b[^\n|;]*?(['\"]).*?\1"
+    r"|-name\s+(['\"]).*?\2", _re.S)
 def _strip_inline_code(text):
     """Remove a PROGRAMMING interpreter's `-c "<code>"` body so its language
     tokens (truncate, drop, >, $) are not mis-read as shell operations. Only
     python/node/ruby/perl bodies are stripped — a `sh -c`/`bash -c` body IS
-    shell, so its verbs are real and must still be scanned."""
-    return _INLINE_CODE_BODY.sub(" -c <code> ", str(text))
+    shell, so its verbs are real and must still be scanned. Also removes heredoc
+    bodies (file content) and a search command's quoted pattern (a verb inside
+    `grep "...prune..."` is a search string, not the operation)."""
+    t = _INLINE_CODE_BODY.sub(" -c <code> ", str(text))
+    t = _HEREDOC_BODY.sub(" <<file-content>> ", t)
+    t = _SEARCH_PATTERN.sub(" <search> ", t)
+    return t
 
 
 # Environment names split by ambiguity in ordinary engineering English.
@@ -272,19 +284,33 @@ def decide(task_scope, catalog, action, env, tool_name=None, arguments=None):
         # authorised for — something it cannot notice about itself.
         if decision == "COMMIT":
             declared_envs = {str(e).lower() for e in ((env or {}).get("environment") or [])}
-            named = _env_names_referenced(action, (env or {}).get("environments_known"))
+            named = _env_names_referenced(_strip_inline_code(action), (env or {}).get("environments_known"))
             if named and declared_envs and not (named & declared_envs):
                 decision, reason = "VERIFY", (
                     f"Mission scope: this run is authorised for {sorted(declared_envs)}, "
                     f"but the action names {sorted(named)}. Approval required.")
+        # 3a2) IRREVERSIBLE VERB CARRIED BY A FLAG (`find . -delete`,
+        # `--force-delete`). The frozen gate keys on the leading command, so a
+        # destructive operation hidden in a flag can slip through as COMMIT.
+        # Deletion is irreversible, so hold it for approval. Downgrade only.
+        if decision == "COMMIT" and _flag_destructive(_strip_inline_code(action)):
+            decision, reason = "VERIFY", (
+                "Irreversible operation carried by a flag (e.g. `-delete`): the "
+                f"action performs a destructive operation not visible as the "
+                f"leading command ({na}). Approval required.")
         # 3b) ARGUMENT-INTRODUCED DANGER (mechanical, no judgement):
         # the declared capability did not contain a destructive verb, but the
         # actual action does -> the arguments brought danger the schema never
         # declared. Evidence mismatch => VERIFY (never silently COMMIT).
-        # Inline interpreter code that RE-ENTERS the shell is hidden execution,
-        # regardless of the benign-looking wrapper.
+        # Inline interpreter code that RE-ENTERS the shell is hidden execution.
+        # Match the ACTUAL shell-executing APIs (os.system(, subprocess.,
+        # child_process, Popen(, a bare exec(/eval( that carries shell syntax) —
+        # NOT a mere property access such as `read.eval` or `x.exec` in ordinary
+        # JS, which names a field and runs nothing.
         if decision == "COMMIT" and _re.search(
-                r"(os\.system|subprocess|\bpopen\b|\beval\b|\bexec\b|check_output|check_call|Popen)",
+                r"os\.system\s*\(|subprocess\.|\.system\s*\(|child_process|\bPopen\s*\("
+                r"|check_output\s*\(|check_call\s*\("
+                r"|(?<![\w.])eval\s*\([^)]*[$`;|&]|(?<![\w.])exec\s*\(",
                 str(action)) and _re.search(r"(?:-c|-e|--command|--eval)\b", str(action)):
             decision, reason = "VERIFY", (
                 "Inline code re-enters the shell (os.system/subprocess/eval), so the real "

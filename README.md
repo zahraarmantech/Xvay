@@ -32,21 +32,67 @@ XVay is honest about its threat model. It is strong at:
   (`read_file` given `config.yaml > /etc/passwd`) → **VERIFY**
 - unbounded or oversized irreversible fan-out (`rm *.log`) → **VERIFY**
 - destructive verbs hidden in flags (`find . -delete`) → **VERIFY**
+- a write destination inside a protected system dir (`download → /etc/cron.d/`) → **VERIFY**
 - references to well-known credential paths (`.ssh/`, `.aws/credentials`) → **VERIFY**
+
+Ordinary shell it deliberately leaves alone: arithmetic expansion `$((...))`,
+read-only command substitution (`$(id -un)`, `$(find ...)`), and writes under a
+user's own `$HOME` or `/tmp`. The substitution check fires on live command
+substitution (`$(curl ...)`, backticks), not on math or read-only lookups.
 
 It does **not** catch:
 
 - **Prompt injection that keeps the agent in-scope.** If an attack makes the
   agent perform an *allowed* action with ordinary-looking arguments (e.g. a
   money transfer to the wrong recipient), XVay has no structural signal to act
-  on. Measured on AgentDojo: ~2% of such attacks stopped with zero config, ~55%
-  with a protective config (see below). This is a design boundary, not a bug.
+  on. Measured previously on AgentDojo: ~2% of such attacks stopped with zero
+  config, ~55% with a protective config. This is a design boundary, not a bug.
 - **Content lineage of undeclared secrets.** A log that happens to contain a key,
   summarised and then sent out, requires tracking derived data through
   execution — which XVay deliberately does not do.
 
 If your hard requirement is automatic rollback or data-flow lineage, XVay is the
 wrong tool.
+
+## Real-agent coverage
+
+XVay is replayed against **real recorded agent traffic from five independent
+sources**, spanning three problem domains and three record formats — not traffic
+we invented. Two things are measured, and they pull in opposite directions:
+
+- **Friction** — on benign traffic, how often does XVay get in the way? A tool
+  that stops ordinary dev work gets uninstalled, so low friction is the bar.
+- **Robustness** — on adversarial traffic, does it still catch the structural
+  red flags it claims to (out-of-scope calls, sensitive-path writes, smuggled
+  arguments)?
+
+| corpus | domain / shape | calls | friction |
+|---|---|---|---|
+| OpenHands (`nebius/SWE-rebench-openhands-trajectories`) | SWE / bash, tools as dicts | 2,525 | **1.0%** |
+| SWE-agent (`nvidia/Open-SWE-Traces`) | SWE / bash, tools as JSON strings + heredocs | 5,068 | **1.9%** |
+| APIGen (`Salesforce/APIGen-MT-5k`) | airline / structured API, non-bash | 124 | **0.0%** |
+| AgentInstruct (`THUDM/AgentInstruct`, os) | real Linux bash sessions | 410 | **1.7%** |
+| AgentHarm (`ai-safety-institute/AgentHarm`) | adversarial / harmful behaviors | 652 | see below |
+
+On the benign corpora, essentially every stop is a genuine irreversible op
+(`rm`, `-delete`) or a sensitive-file read (`cat /etc/passwd`); there are
+**zero** unexpected false positives after hardening. Reproduce with:
+
+```bash
+pip install datasets
+python real_agent_benchmark.py 100 openhands
+python real_agent_benchmark.py 100 sweagent
+python real_agent_benchmark.py 40  apigen
+```
+
+On AgentHarm the honest result has two parts. XVay COMMITs ~99% of calls —
+**correctly**, because it is not a content or intent judge and never claimed to
+be; a `paypal_transfer` is structurally an allowed call if the agent holds that
+tool. What it *does* catch, even here, are the structural attacks: a
+credential-path read smuggled into an email body, a download whose destination
+is `/etc/cron.d/`, an out-of-scope tool the agent was never granted, a
+`curl | sh` inside a terminal argument. That boundary — structure yes, intent
+no — is the product being honest about what it is.
 
 ## Install
 
@@ -84,28 +130,23 @@ For production the envelope should be **signed** (Ed25519); see
 Every claim above is checked by a test in this repo.
 
 ```bash
-for t in identity_test property_test adversarial_benchmark; do
+for t in adversarial_benchmark property_test identity_test real_agent_benchmark; do
   echo "== $t =="; python3 $t.py
 done
-
-# real recorded agent traffic (downloads a public dataset):
-pip install datasets
-python3 real_agent_benchmark.py 150
 ```
 
 > **Windows:** use `python` instead of `python3` (the `python3` alias usually
-> isn't defined). In PowerShell, run each test with `python <name>.py`.
+> isn't defined). In Git Bash the loop above works as-is once you swap the
+> command; in PowerShell, run each test with `python <name>.py`.
+
+The proof tests:
 
 | test | what it proves |
 |---|---|
-| `real_agent_benchmark.py` | replays **10,000 real OpenHands tool calls** (150 real GitHub-issue fixes) through the gate: **1.4% friction, 0 parse errors**, and every stop is a real `rm` — reproduce it yourself |
-| `adversarial_benchmark.py` | 38 hand-built attacks incl. shell-injection, command substitution, pipe-to-interpreter, data-egress; **0 leaks, 0 friction** |
 | `property_test.py` | 245 generated spelling/transform cases; no dangerous action ever COMMITs, no benign one is ever stopped |
+| `adversarial_benchmark.py` | 38 hand-built attacks incl. shell-injection; 0 leaks, 0 friction |
 | `identity_test.py` | 8 structural invariants over 4,896 inputs: the wrapper checks only ever downgrade COMMIT→VERIFY, never execute, never emit BLOCK |
-
-The 1.4% the gate holds on real traffic is not friction to be tuned away — every
-one is a real `rm` of a file, held for a one-tap approval because deletion is
-irreversible. That is the product working, measured on traffic we did not write.
+| `real_agent_benchmark.py` | replays real recorded traffic from four independent agent sources (see *Real-agent coverage* above); measures compatibility + friction honestly |
 
 ## How it works (one paragraph)
 

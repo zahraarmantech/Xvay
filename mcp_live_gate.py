@@ -21,8 +21,16 @@ import gate_with_envelope as gwe
 # not commands; excluded from the canonical action. (Their raw text is still
 # scanned by arg_check for shell control characters.)
 FREE_TEXT_KEYS = {"message","m","msg","text","body","description","desc",
-                  "title","comment","summary","note","reason","content"}
+                  "title","comment","summary","note","reason","content",
+                  # code-content fields: an editor writing source to disk. Their
+                  # value is inert text, not an executable action, so it must not
+                  # feed the destructive-verb / scope scan (a Python `df.drop()`
+                  # or a docstring is not an `rm`).
+                  "file_text","new_str","old_str","code","patch","diff","source",
+                  "thought","task_list","docstring","template"}
 
+import re as _re_cta
+_HEREDOC_CTA = _re_cta.compile(r"<<-?\s*(['\"]?)(\w+)\1\r?\n.*?\r?\n\2\b", _re_cta.S)
 def call_to_action(params):
     """Flatten an MCP tools/call into one canonical action string.
     name 'kubectl_delete' + args {'resource':'namespace','target':'production'}
@@ -37,7 +45,7 @@ def call_to_action(params):
             continue
         v = args[k]
         if isinstance(v, (str,int,float)):
-            parts.append(str(v))
+            parts.append(_HEREDOC_CTA.sub(" <<file-content>> ", str(v)))
         elif isinstance(v, list):
             parts.extend(str(x) for x in v)
         elif isinstance(v, dict):
