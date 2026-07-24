@@ -89,14 +89,14 @@
     <p class="sub">A deterministic firewall between an agent's decision and irreversible execution. Every tool call gets a verdict — before it runs.</p>
 
     <div class="verdicts">
-      <div class="verdict v-commit"><b>🟢 COMMIT</b><small>enough evidence — proceed</small></div>
-      <div class="verdict v-verify"><b>🟡 VERIFY</b><small>evidence missing — hold for a human</small></div>
-      <div class="verdict v-block"><b>🔴 BLOCK</b><small>declared contradiction — never executes</small></div>
+      <div class="verdict v-commit"><b>🟢 COMMIT</b><small>provably in scope — proceed</small></div>
+      <div class="verdict v-verify"><b>🟡 VERIFY</b><small>uncertain — hold for a human</small></div>
+      <div class="verdict v-block"><b>🔴 BLOCK</b><small>forbidden — never executes</small></div>
     </div>
 
     <div class="ctas">
       <a class="btn btn-primary" href="https://github.com/zahraarmantech/Xvay">⭐ Star on GitHub</a>
-      <a class="btn btn-ghost" href="mailto:hello@xvay.ai?subject=Shadow-mode%20session">Book a 30-min shadow-mode session</a>
+      <a class="btn btn-ghost" href="mailto:info@xvay.ai?subject=Shadow-mode%20session">Book a 30-min shadow-mode session</a>
     </div>
     <p class="note">Open source (AGPL-3.0) · Built for MCP · Read-only shadow mode — changes nothing</p>
 
@@ -104,9 +104,10 @@
       <div class="tbar"><div class="dot d1"></div><div class="dot d2"></div><div class="dot d3"></div></div>
       <div class="tbody"><span class="dim">agent →</span> db.execute(<span class="a">"DROP TABLE users CASCADE"</span>)
 
-<span class="c">xvay ⛔ BLOCK</span>  <span class="dim">(decision in &lt;1ms, permit #a41f…9c2e)</span>
+<span class="c">xvay ⛔ BLOCK</span>  <span class="dim">(decision in 12ms, permit #a41f…9c2e)</span>
   <span class="r">✗</span> resource <span class="c">db.users</span> is declared sensitive
   <span class="r">✗</span> destructive call outside mission scope <span class="dim">(mission: read-logs-042)</span>
+  <span class="r">✗</span> irreversible: no rollback path detected
   <span class="dim">→ full reasoning logged · nothing was executed</span>
 
 <span class="dim">agent →</span> logs.read(<span class="a">"api-gateway", last="1h"</span>)
@@ -126,7 +127,7 @@
       <div class="card">
         <span class="step">02</span>
         <h3>Declare what's sacred</h3>
-        <p>Mark sensitive resources and the mission's scope. Xvay seals both into a cryptographically signed permit the agent can't forge or widen — so a prompt-injected agent still can't grant itself permissions it wasn't given.</p>
+        <p>Mark sensitive resources and the mission's scope. Xvay seals both into a cryptographically signed permit the agent can't forge or widen — even when prompt-injected.</p>
       </div>
       <div class="card">
         <span class="step">03</span>
@@ -152,32 +153,33 @@
         <h3>Proof in 30 minutes</h3>
         <p>Run read-only shadow mode on your own traffic and get a report of what it <i>would have</i> blocked or held. If the report is empty, you lost half an hour — and we'll say so.</p>
       </div>
+      <div class="card">
+        <h3>Reversibility, not danger</h3>
+        <p>It doesn't hold "scary" commands — it holds irreversible ones. <code class="inline">systemctl stop</code> is fine (<code class="inline">start</code> undoes it); <code class="inline">rm</code> is not. One rule covers <code class="inline">aws</code>, <code class="inline">kubectl</code>, and a script you wrote yesterday — nothing to keep updated.</p>
+      </div>
     </div>
 
     <div class="proof">
-      <p>In July 2025, an AI coding agent deleted a production database <b>despite an explicit code freeze</b> — then misreported what it had done, and the deletion turned out to be irreversible. The guardrails were added afterwards.</p>
+      <p>In July 2025, an AI coding agent deleted a production database <b>despite an explicit code freeze</b> — then misreported what it had done. The guardrails were added afterwards.</p>
       <p style="margin-top:8px"><b>Xvay exists so "afterwards" never has to happen.</b></p>
       <p class="src">Source: <a href="https://www.theregister.com/2025/07/21/replit_saastr_vibe_coding_incident/">The Register, July 21, 2025</a></p>
     </div>
 
-    <p class="honest"><b>What Xvay deliberately doesn't do:</b> it never guesses what's dangerous for your business — you declare it, Xvay enforces it. It doesn't replace IAM (that's "who may ever do what"; Xvay answers "is there enough evidence to execute <i>this call</i>, in <i>this mission</i>, right now?"). It does not roll back — it prevents before execution, so if you need automatic undo of partial workflows, a transactional runtime is the right tool and Xvay is not. And it makes no claim to read intent or to stop every prompt injection: an attack that keeps the agent within its allowed scope has no structural signal for Xvay to catch. Declaring your critical resources and egress points is what does the heavy lifting.</p>
+    <p class="honest"><b>What Xvay deliberately doesn't do:</b> it never guesses what's dangerous for your business — you declare it, Xvay enforces it. It doesn't replace IAM (that's "who may ever do what"; Xvay answers "should <i>this call</i>, in <i>this mission</i>, execute <i>right now</i>?"). And it makes no claims about intent-reading — declaring your critical resources is what does the heavy lifting.</p>
   </section>
 
   <section>
     <div class="kicker">Get started</div>
     <h2>Shadow mode in ~5 minutes</h2>
-    <p style="margin-top:14px;color:var(--muted)">Read-only. Replays your tool-call log and reports what enforcement <i>would have</i> decided. Changes nothing.</p>
-    <div class="terminal" style="margin-top:22px;max-width:620px;margin-left:0">
+    <p style="margin-top:14px;color:var(--muted)">Read-only. Observes tool calls, reports what it would have blocked. Changes nothing.</p>
+    <div class="terminal" style="margin-top:22px;max-width:560px;margin-left:0">
       <div class="tbar"><div class="dot d1"></div><div class="dot d2"></div><div class="dot d3"></div></div>
-      <div class="tbody"><span class="dim">$</span> git clone https://github.com/zahraarmantech/Xvay
-<span class="dim">$</span> pip install -r requirements.txt
-<span class="dim">$</span> python xvay_shadow.py --framework mcp \
-      --schema <span class="a">tools.json</span> --actions <span class="a">actions.jsonl</span> \
-      --output report.html</div>
+      <div class="tbody"><span class="dim">$</span> pip install xvay
+<span class="dim">$</span> xvay shadow --agent <span class="a">&lt;your-agent-endpoint&gt;</span></div>
     </div>
     <div class="ctas" style="justify-content:flex-start;margin-top:30px">
       <a class="btn btn-primary" href="https://github.com/zahraarmantech/Xvay">Read the docs on GitHub</a>
-      <a class="btn btn-ghost" href="mailto:hello@xvay.ai?subject=Design%20partner">Become a design partner</a>
+      <a class="btn btn-ghost" href="mailto:info@xvay.ai?subject=Design%20partner">Become a design partner</a>
     </div>
   </section>
 
