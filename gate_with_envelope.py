@@ -132,6 +132,56 @@ def _is_destructive_operation(raw_action, tool_name):
         return True
     return bool(_flag_destructive(raw_action))
 
+# ── Wrapper-level completions of principles the frozen core already holds ──
+# These are NOT per-vendor CLI rules. Xvay's criterion is reversibility, not
+# danger: `systemctl stop` is dangerous but reversible (`start` undoes it), so
+# it is deliberately NOT held here. Encoding one rule per cloud CLI would turn
+# Xvay into a signature scanner and would need endless upkeep; a verb is
+# irreversible regardless of which binary runs it.
+#
+# Synonyms for the frozen core's DESTRUCTIVE set that are simply missing from
+# it. `rb` (as in `aws s3 rb`) is intentionally excluded: `script.rb` tokenises
+# to include `rb`, so it would stop every Ruby invocation — too costly.
+_IRREVERSIBLE_SYNONYMS = {"terminate", "dropdb", "mkfs", "purge", "shred"}
+
+def _subcommand_irreversible(raw_action):
+    """An irreversible verb in the leading command OR its subcommand chain
+    (`aws ec2 terminate-instances`, `rclone purge x`), which the frozen core
+    misses because it keys on the first token only. Only bare leading words are
+    inspected — a token carrying `/`, `.` or `:` is a path or target, so
+    `pytest tests/test_terminate.py` is not read as a terminate operation."""
+    parts = [p for p in str(raw_action).split() if not p.startswith("-")]
+    hits = set()
+    # the canonical action is prefixed with the tool name ("bash aws ec2 ..."),
+    # so the operation verb can sit a few tokens in. The window stays small so
+    # a verb appearing later, as an argument or free text, is not picked up.
+    for tok in parts[:4]:
+        if any(ch in tok for ch in "/.:"):
+            continue
+        hits |= (set(_words(tok)) & _IRREVERSIBLE_SYNONYMS)
+    return hits
+
+# Commands that MUTATE a target rather than write to it. The core already holds
+# "a write destination inside a protected system dir is a red flag"; permission,
+# ownership and format changes are the same principle on the same paths. Each
+# one below destroys state the system cannot reconstruct: after `chmod -R 777`
+# the original modes are simply gone. `mount`/`umount` are excluded because they
+# destroy nothing and `umount` undoes them.
+_SYS_MUTATORS = {"chmod", "chown", "chgrp", "setfacl", "mkfs"}
+_SYS_PATH = _re.compile(r"(?:^|\s)/(etc|root|proc|sys|boot|bin|sbin|lib|usr/bin|usr/sbin|usr/lib|dev)\b")
+
+def _system_path_mutation(raw_action):
+    """A permission/ownership/format change aimed at a protected system path
+    (`chmod -R 777 /etc`, `mkfs.ext4 /dev/sdb1`). A workspace-scoped agent has
+    no business mutating these, whoever the vendor is."""
+    parts = [p for p in str(raw_action).split() if not p.startswith("-")]
+    if not parts:
+        return False
+    head = set()
+    for tok in parts[:2]:          # tool-name prefix, then the real command
+        head |= (set(_words(tok)) & _SYS_MUTATORS)
+    return bool(head) and bool(_SYS_PATH.search(str(raw_action)))
+
 def _fanout(raw_action, tool_name=None):
     """(n_targets, has_glob) counted from the action text. A fact, not a verdict.
     A target is any non-flag operand that is not the tool's own name or the
@@ -298,6 +348,24 @@ def decide(task_scope, catalog, action, env, tool_name=None, arguments=None):
                 "Irreversible operation carried by a flag (e.g. `-delete`): the "
                 f"action performs a destructive operation not visible as the "
                 f"leading command ({na}). Approval required.")
+        # 3a3) IRREVERSIBLE VERB IN THE SUBCOMMAND CHAIN. The frozen gate reads
+        # the first token, so `aws ec2 terminate-instances` and `rclone purge x`
+        # look like an `aws`/`rclone` call. The verb, not the vendor, decides.
+        if decision == "COMMIT":
+            _sub = _subcommand_irreversible(_strip_inline_code(action))
+            if _sub:
+                decision, reason = "VERIFY", (
+                    f"Irreversible operation named in the subcommand "
+                    f"({sorted(_sub)}): the leading command alone does not show "
+                    f"it. Approval required.")
+        # 3a4) MUTATION OF A PROTECTED SYSTEM PATH. Companion to the existing
+        # write-destination rule: `chmod -R 777 /etc` destroys the original
+        # modes, which the system cannot reconstruct.
+        if decision == "COMMIT" and _system_path_mutation(_strip_inline_code(action)):
+            decision, reason = "VERIFY", (
+                "Permission, ownership or format change aimed at a protected "
+                "system path. The prior state is not recoverable, so this is "
+                "held for approval.")
         # 3b) ARGUMENT-INTRODUCED DANGER (mechanical, no judgement):
         # the declared capability did not contain a destructive verb, but the
         # actual action does -> the arguments brought danger the schema never
