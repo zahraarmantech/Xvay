@@ -34,13 +34,24 @@ XVay is honest about its threat model. It is strong at:
   (`read_file` given `config.yaml > /etc/passwd`) → **VERIFY**
 - unbounded or oversized irreversible fan-out (`rm *.log`) → **VERIFY**
 - destructive verbs hidden in flags (`find . -delete`) → **VERIFY**
+- irreversible verbs sitting in a subcommand chain, where the leading command
+  hides them (`aws ec2 terminate-instances`, `rclone purge`, `dropdb`) → **VERIFY**
 - a write destination inside a protected system dir (`download → /etc/cron.d/`) → **VERIFY**
+- permission, ownership or format changes on those same paths (`chmod -R 777
+  /etc`, `mkfs.ext4 /dev/sdb1`) — the prior state is not recoverable → **VERIFY**
 - references to well-known credential paths (`.ssh/`, `.aws/credentials`) → **VERIFY**
 
 Ordinary shell it deliberately leaves alone: arithmetic expansion `$((...))`,
 read-only command substitution (`$(id -un)`, `$(find ...)`), and writes under a
 user's own `$HOME` or `/tmp`. The substitution check fires on live command
 substitution (`$(curl ...)`, backticks), not on math or read-only lookups.
+
+**The criterion is reversibility, not danger.** `systemctl stop postgresql` is
+dangerous and is deliberately *not* held — `systemctl start` undoes it. Neither
+is `mount`, nor `kubectl drain`: they destroy nothing. This is why XVay is not a
+per-vendor signature list that has to grow every month. A verb is irreversible
+regardless of which CLI runs it, so the same rule covers `aws`, `gcloud`,
+`kubectl` and a shell script you wrote yesterday, with nothing to keep updated.
 
 It does **not** catch:
 
@@ -86,6 +97,10 @@ python real_agent_benchmark.py 100 openhands
 python real_agent_benchmark.py 100 sweagent
 python real_agent_benchmark.py 40  apigen
 ```
+
+The shipped script covers the first three. AgentInstruct and AgentHarm were
+measured separately against the same gate; the dataset identifiers above are
+given so the numbers can be repeated independently rather than taken on trust.
 
 On AgentHarm the honest result has two parts. XVay COMMITs ~99% of calls —
 **correctly**, because it is not a content or intent judge and never claimed to
@@ -148,7 +163,7 @@ The proof tests:
 | `property_test.py` | 245 generated spelling/transform cases; no dangerous action ever COMMITs, no benign one is ever stopped |
 | `adversarial_benchmark.py` | 38 hand-built attacks incl. shell-injection; 0 leaks, 0 friction |
 | `identity_test.py` | 8 structural invariants over 4,896 inputs: the wrapper checks only ever downgrade COMMIT→VERIFY, never execute, never emit BLOCK |
-| `real_agent_benchmark.py` | replays real recorded traffic from four independent agent sources (see *Real-agent coverage* above); measures compatibility + friction honestly |
+| `real_agent_benchmark.py` | replays real recorded traffic from independent agent sources (see *Real-agent coverage* above); measures compatibility + friction honestly |
 
 ## How it works (one paragraph)
 
